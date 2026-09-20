@@ -9,7 +9,6 @@ from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import yt_dlp
 
-# 🔥 Hidden Errors पकड़ने के लिए Logging लगा दी है
 logging.basicConfig(level=logging.INFO)
 
 from config import *
@@ -23,7 +22,7 @@ uploader_bot = Client("UploaderBot", api_id=API_ID, api_hash=API_HASH, bot_token
 
 @key_bot.on_message(filters.command("start") & filters.private)
 async def start_cmd(client, message):
-    print(f"📩 SUCCESS: {message.from_user.first_name} ne /start dabaya!") # ये Railway logs में दिखेगा
+    print(f"📩 SUCCESS: {message.from_user.first_name} ne /start dabaya!") 
     buttons = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔑 Generate API Key", callback_data="gen_key")],
         [InlineKeyboardButton("📊 My API Info", callback_data="my_api_info")],
@@ -76,37 +75,82 @@ async def back_to_start(client, callback_query):
 
 app = FastAPI(title="Turbo Music API")
 
-@app.on_event("startup")
-async def startup_event():
-    print("⏳ Checking Telegram Connection...")
-    try:
-        await key_bot.start()
-        bot_info = await key_bot.get_me()
-        print(f"✅ MAIN BOT CONNECTED AS: @{bot_info.username}")
-        
-        await uploader_bot.start()
-        up_info = await uploader_bot.get_me()
-        print(f"✅ UPLOADER BOT CONNECTED AS: @{up_info.username}")
-    except Exception as e:
-        print(f"❌ TELEGRAM CONNECTION FAILED: {e}")
-
-    if COOKIES_URL:
-        try:
-            print("📥 Downloading cookies...")
-            urllib.request.urlretrieve(COOKIES_URL, "cookies.txt")
-        except:
-            pass
-            
-    print(f"🚀 API Engine Running safely on Port {PORT}")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    await key_bot.stop()
-    await uploader_bot.stop()
-
 @app.get("/")
 async def health_check(): 
-    return {"status": "ok"}
+    return {"status": "ok", "message": "Music API is Online!"}
+
+@app.get("/speedtest")
+async def api_speedtest():
+    start_time = time.time()
+    await db.command("ping")
+    end_time = time.time()
+    ping_ms = round((end_time - start_time) * 1000, 2)
+    return {"status": "success", "latency_ms": ping_ms, "speed": "Lightning Fast ⚡"}
+
+def turbo_download(query: str):
+    if not os.path.exists("downloads"): os.makedirs("downloads")
+    ydl_opts = {
+        'format': 'bestaudio[ext=m4a]/bestaudio', 
+        'cookiefile': 'cookies.txt', 
+        'outtmpl': 'downloads/%(id)s.%(ext)s',
+        'noplaylist': True,
+        'quiet': True,
+        'no_warnings': True,
+        'geo_bypass': True,
+        'external_downloader': 'aria2c',
+        'external_downloader_args': ['-x16', '-s16', '-k1M']
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(f"ytsearch1:{query}", download=True)['entries'][0]
+        return ydl.prepare_filename(info), info['title'], info.get('duration', 0)
+
+@app.get("/api/v1/download")
+async def download_endpoint(query: str, api_key: str = Header(None)):
+    if not api_key: raise HTTPException(status_code=403, detail="Missing API Key")
+    is_valid, msg = await verify_and_track_api_key(api_key)
+    if not is_valid: raise HTTPException(status_code=403, detail=msg)
+
+    cached_file_id = await get_cached_file(query)
+    if cached_file_id: return {"status": "success", "cache": True, "telegram_file_id": cached_file_id}
+
+    try:
+        file_path, title, duration = await asyncio.to_thread(turbo_download, query)
+        message = await uploader_bot.send_audio(
+            chat_id=CACHE_CHANNEL_ID, audio=file_path, caption=f"🎵 {title}\n⏱ {duration}s"
+        )
+        telegram_file_id = message.audio.file_id
+        await set_cached_file(query, telegram_file_id)
+        if os.path.exists(file_path): os.remove(file_path)
+        return {"status": "success", "cache": False, "telegram_file_id": telegram_file_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def main():
+    # 🔥 1. FORCED FIX: Clear Stuck Webhooks from Telegram Servers
+    try:
+        urllib.request.urlopen(f"https://api.telegram.org/bot{KEY_BOT_TOKEN}/deleteWebhook?drop_pending_updates=True")
+        urllib.request.urlopen(f"https://api.telegram.org/bot{UPLOADER_BOT_TOKEN}/deleteWebhook?drop_pending_updates=True")
+        print("🧹 SUCCESS: Telegram Webhooks Cleared!")
+    except Exception as e:
+        print(f"Webhook Check: {e}")
+
+    # 🔥 2. Download Cookies Safely
+    if COOKIES_URL:
+        try:
+            urllib.request.urlretrieve(COOKIES_URL, "cookies.txt")
+            print("📥 SUCCESS: Cookies Downloaded!")
+        except:
+            pass
+
+    # 🔥 3. Start Pyrogram Bots
+    await key_bot.start()
+    await uploader_bot.start()
+    print("🤖 BOTS STARTED AND LISTENING FOR MESSAGES!")
+
+    # 🔥 4. Start API Server (in the exact same brain/loop)
+    config = uvicorn.Config(app=app, host="0.0.0.0", port=PORT)
+    server = uvicorn.Server(config)
+    await server.serve()
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    asyncio.run(main())
