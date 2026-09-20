@@ -2,11 +2,15 @@ import os
 import time
 import asyncio
 import urllib.request
+import logging
 from fastapi import FastAPI, HTTPException, Header
 import uvicorn
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import yt_dlp
+
+# 🔥 Hidden Errors पकड़ने के लिए Logging लगा दी है
+logging.basicConfig(level=logging.INFO)
 
 from config import *
 from database import (
@@ -14,12 +18,12 @@ from database import (
     get_cached_file, set_cached_file, get_user_info, db
 )
 
-# 🔥 FIX: Added in_memory=True to prevent Session Lock issues on Railway
 key_bot = Client("KeyGenBot", api_id=API_ID, api_hash=API_HASH, bot_token=KEY_BOT_TOKEN, in_memory=True)
 uploader_bot = Client("UploaderBot", api_id=API_ID, api_hash=API_HASH, bot_token=UPLOADER_BOT_TOKEN, in_memory=True)
 
 @key_bot.on_message(filters.command("start") & filters.private)
 async def start_cmd(client, message):
+    print(f"📩 SUCCESS: {message.from_user.first_name} ne /start dabaya!") # ये Railway logs में दिखेगा
     buttons = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔑 Generate API Key", callback_data="gen_key")],
         [InlineKeyboardButton("📊 My API Info", callback_data="my_api_info")],
@@ -34,7 +38,6 @@ async def speedtest_cmd(client, message):
     end_time = time.time()
     
     telegram_ping = round((end_time - start_time) * 1000, 2)
-    
     db_start = time.time()
     await db.command("ping")
     db_end = time.time()
@@ -42,9 +45,8 @@ async def speedtest_cmd(client, message):
     
     text = (
         "🚀 **Speed Test Results**\n\n"
-        f"🤖 **Bot Latency (Telegram):** `{telegram_ping} ms`\n"
-        f"⚡ **API Latency (Database):** `{api_ping} ms`\n\n"
-        "🟢 **Status:** Ultra Fast"
+        f"🤖 **Bot Latency:** `{telegram_ping} ms`\n"
+        f"⚡ **API Latency:** `{api_ping} ms`\n\n🟢 **Status:** Ultra Fast"
     )
     await msg.edit_text(text)
 
@@ -72,22 +74,29 @@ async def my_api_info_callback(client, callback_query):
 async def back_to_start(client, callback_query):
     await start_cmd(client, callback_query.message)
 
-
 app = FastAPI(title="Turbo Music API")
 
 @app.on_event("startup")
 async def startup_event():
-    # 🔥 Link से Cookies डाउनलोड करने का कोड
+    print("⏳ Checking Telegram Connection...")
+    try:
+        await key_bot.start()
+        bot_info = await key_bot.get_me()
+        print(f"✅ MAIN BOT CONNECTED AS: @{bot_info.username}")
+        
+        await uploader_bot.start()
+        up_info = await uploader_bot.get_me()
+        print(f"✅ UPLOADER BOT CONNECTED AS: @{up_info.username}")
+    except Exception as e:
+        print(f"❌ TELEGRAM CONNECTION FAILED: {e}")
+
     if COOKIES_URL:
         try:
-            print(f"📥 Downloading cookies from URL...")
+            print("📥 Downloading cookies...")
             urllib.request.urlretrieve(COOKIES_URL, "cookies.txt")
-            print("✅ Cookies downloaded successfully!")
-        except Exception as e:
-            print(f"❌ Error downloading cookies: {e}")
+        except:
+            pass
             
-    await key_bot.start()
-    await uploader_bot.start()
     print(f"🚀 API Engine Running safely on Port {PORT}")
 
 @app.on_event("shutdown")
@@ -97,53 +106,7 @@ async def shutdown_event():
 
 @app.get("/")
 async def health_check(): 
-    return {"status": "ok", "message": "Music API is Online!"}
-
-@app.get("/speedtest")
-async def api_speedtest():
-    start_time = time.time()
-    await db.command("ping")
-    end_time = time.time()
-    ping_ms = round((end_time - start_time) * 1000, 2)
-    return {"status": "success", "latency_ms": ping_ms, "speed": "Lightning Fast ⚡"}
-
-def turbo_download(query: str):
-    if not os.path.exists("downloads"): os.makedirs("downloads")
-    ydl_opts = {
-        'format': 'bestaudio[ext=m4a]/bestaudio', 
-        'cookiefile': 'cookies.txt', 
-        'outtmpl': 'downloads/%(id)s.%(ext)s',
-        'noplaylist': True,
-        'quiet': True,
-        'no_warnings': True,
-        'geo_bypass': True,
-        'external_downloader': 'aria2c',
-        'external_downloader_args': ['-x16', '-s16', '-k1M']
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(f"ytsearch1:{query}", download=True)['entries'][0]
-        return ydl.prepare_filename(info), info['title'], info.get('duration', 0)
-
-@app.get("/api/v1/download")
-async def download_endpoint(query: str, api_key: str = Header(None)):
-    if not api_key: raise HTTPException(status_code=403, detail="Missing API Key")
-    is_valid, msg = await verify_and_track_api_key(api_key)
-    if not is_valid: raise HTTPException(status_code=403, detail=msg)
-
-    cached_file_id = await get_cached_file(query)
-    if cached_file_id: return {"status": "success", "cache": True, "telegram_file_id": cached_file_id}
-
-    try:
-        file_path, title, duration = await asyncio.to_thread(turbo_download, query)
-        message = await uploader_bot.send_audio(
-            chat_id=CACHE_CHANNEL_ID, audio=file_path, caption=f"🎵 {title}\n⏱ {duration}s"
-        )
-        telegram_file_id = message.audio.file_id
-        await set_cached_file(query, telegram_file_id)
-        if os.path.exists(file_path): os.remove(file_path)
-        return {"status": "success", "cache": False, "telegram_file_id": telegram_file_id}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return {"status": "ok"}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=PORT)
