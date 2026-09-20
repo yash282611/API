@@ -14,4 +14,4 @@ NORMAL_USER_EXPIRY_DAYS = 7
 PORT = int(os.getenv("PORT", 8000))
 
 # नया वेरिएबल लिंक से कुकीज़ उठाने के लिए
-COOKIES_URL = os.getenv("COOKIES_URL", "https://batbin.me/raw/intergraft ")
+COOKIES_URL = os.getenv("COOKIES_URL", "https://batbin.me/raw/deejay")
