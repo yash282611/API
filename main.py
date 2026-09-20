@@ -14,8 +14,9 @@ from database import (
     get_cached_file, set_cached_file, get_user_info, db
 )
 
-key_bot = Client("KeyGenBot", api_id=API_ID, api_hash=API_HASH, bot_token=KEY_BOT_TOKEN)
-uploader_bot = Client("UploaderBot", api_id=API_ID, api_hash=API_HASH, bot_token=UPLOADER_BOT_TOKEN)
+# 🔥 FIX: Added in_memory=True to prevent Session Lock issues on Railway
+key_bot = Client("KeyGenBot", api_id=API_ID, api_hash=API_HASH, bot_token=KEY_BOT_TOKEN, in_memory=True)
+uploader_bot = Client("UploaderBot", api_id=API_ID, api_hash=API_HASH, bot_token=UPLOADER_BOT_TOKEN, in_memory=True)
 
 @key_bot.on_message(filters.command("start") & filters.private)
 async def start_cmd(client, message):
@@ -87,7 +88,7 @@ async def startup_event():
             
     await key_bot.start()
     await uploader_bot.start()
-    print(f"🚀 API Engine Running on Port {PORT}")
+    print(f"🚀 API Engine Running safely on Port {PORT}")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -110,7 +111,7 @@ def turbo_download(query: str):
     if not os.path.exists("downloads"): os.makedirs("downloads")
     ydl_opts = {
         'format': 'bestaudio[ext=m4a]/bestaudio', 
-        'cookiefile': 'cookies.txt', # अब ये अपने आप डाउनलोड हुई फाइल उठा लेगा
+        'cookiefile': 'cookies.txt', 
         'outtmpl': 'downloads/%(id)s.%(ext)s',
         'noplaylist': True,
         'quiet': True,
