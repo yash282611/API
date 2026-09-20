@@ -12,3 +12,6 @@ CACHE_CHANNEL_ID = int(os.getenv("CACHE_CHANNEL_ID", 0))
 OWNER_ID = int(os.getenv("OWNER_ID", 0))
 NORMAL_USER_EXPIRY_DAYS = 7
 PORT = int(os.getenv("PORT", 8000))
+
+# नया वेरिएबल लिंक से कुकीज़ उठाने के लिए
+COOKIES_URL = os.getenv("COOKIES_URL", "")
