@@ -1,6 +1,7 @@
 import os
 import time
 import asyncio
+import urllib.request
 from fastapi import FastAPI, HTTPException, Header
 import uvicorn
 from pyrogram import Client, filters
@@ -23,7 +24,7 @@ async def start_cmd(client, message):
         [InlineKeyboardButton("📊 My API Info", callback_data="my_api_info")],
         [InlineKeyboardButton("⚡ Speed Test", callback_data="run_speedtest")]
     ])
-    await message.reply("⚡ **Lightning Fast Music API!**\n\nअपनी API Key जनरेट करें या स्पीड चेक करें。", reply_markup=buttons)
+    await message.reply("⚡ **Lightning Fast Music API!**\n\nअपनी API Key जनरेट करें या स्पीड चेक करें।", reply_markup=buttons)
 
 @key_bot.on_message(filters.command(["speedtest", "ping"]) & filters.private)
 async def speedtest_cmd(client, message):
@@ -70,10 +71,20 @@ async def my_api_info_callback(client, callback_query):
 async def back_to_start(client, callback_query):
     await start_cmd(client, callback_query.message)
 
+
 app = FastAPI(title="Turbo Music API")
 
 @app.on_event("startup")
 async def startup_event():
+    # 🔥 Link से Cookies डाउनलोड करने का कोड
+    if COOKIES_URL:
+        try:
+            print(f"📥 Downloading cookies from URL...")
+            urllib.request.urlretrieve(COOKIES_URL, "cookies.txt")
+            print("✅ Cookies downloaded successfully!")
+        except Exception as e:
+            print(f"❌ Error downloading cookies: {e}")
+            
     await key_bot.start()
     await uploader_bot.start()
     print(f"🚀 API Engine Running on Port {PORT}")
@@ -99,7 +110,7 @@ def turbo_download(query: str):
     if not os.path.exists("downloads"): os.makedirs("downloads")
     ydl_opts = {
         'format': 'bestaudio[ext=m4a]/bestaudio', 
-        'cookiefile': 'cookies.txt',
+        'cookiefile': 'cookies.txt', # अब ये अपने आप डाउनलोड हुई फाइल उठा लेगा
         'outtmpl': 'downloads/%(id)s.%(ext)s',
         'noplaylist': True,
         'quiet': True,
